@@ -237,7 +237,7 @@ function panel() {
   }
   const name = sel.properties.name, c = CLIENTS[name];
   body.innerHTML = c
-    ? `<button class="crumb" id="back">&larr; Back to globe</button><p style="margin:0">${esc(name)}</p><h1>${esc(c.name)}</h1><span class="ver">Version ${esc(c.version)}</span><p>${esc(c.desc)}</p><a class="open" href="${esc(c.url)}" target="_blank" rel="noopener">Open ${esc(c.name)}</a>`
+    ? `<button class="crumb" id="back">&larr; Back to globe</button><p style="margin:0">${esc(name)}</p><h1>${esc(c.name)}</h1>${c.version ? `<span class="ver">Version ${esc(c.version)}</span>` : ""}${c.desc ? `<p>${esc(c.desc)}</p>` : ""}<a class="open" href="${esc(c.url)}"${/^https?:/i.test(c.url) ? ' target="_blank" rel="noopener"' : ""}>Play</a>`
     : `<button class="crumb" id="back">&larr; Back to globe</button><h1>${esc(name)}</h1><p>No client here yet.</p><div class="note">To add one, put <code>"${esc(name)}"</code> in the <code>CLIENTS</code> list at the top of the script in index.html.</div>`;
   $("back").onclick = unselect;
 }
@@ -296,12 +296,14 @@ $("body").addEventListener("click", e => {
 
 
 /* ---------- login: decrypts the client list with the username + password ---------- */
+let lastKey;
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 async function unlock(user, pass) {
   const V = window.VAULT;
   if (!V) throw new Error("vault.js is missing");
   const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(user.trim().toLowerCase() + ":" + pass), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(V.salt), iterations: V.iter, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(V.salt), iterations: V.iter, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, true, ["decrypt"]);
+  lastKey = key;
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(V.iv) }, key, b64(V.data));
   return JSON.parse(new TextDecoder().decode(pt));
 }
@@ -314,6 +316,10 @@ $("login").addEventListener("submit", async e => {
   btn.disabled = true; msg.textContent = "";
   try {
     const data = await unlock(u, p);
+    try {
+      const raw = new Uint8Array(await crypto.subtle.exportKey("raw", lastKey)); let r = "";
+      raw.forEach(x => r += String.fromCharCode(x)); sessionStorage.setItem("gal-s", btoa(r));
+    } catch (x) {}
     enter(data);
   } catch (err) {
     msg.textContent = window.VAULT ? "Wrong username or password." : "Login file (vault.js) not found.";
