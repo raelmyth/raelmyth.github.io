@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gal vault maker</title>
+<style>
+body{margin:0;background:#070b16;color:#eaf0ff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+main{max-width:46rem;margin:0 auto;padding:2rem 1.25rem 4rem}
+h1{font-size:1.6rem;margin:0 0 .25rem}
+p,li{color:#8d9bbd}
+label{display:block;font-weight:600;margin:1.1rem 0 .3rem}
+input,textarea{width:100%;background:#0b1224;border:1px solid #222f52;border-radius:.6rem;color:#eaf0ff;font:inherit;padding:.7rem .85rem}
+textarea{min-height:11rem;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem}
+button{border:0;border-radius:.7rem;background:#f2845c;color:#1b0d07;font-weight:600;padding:.8rem 1.3rem;cursor:pointer;margin:1rem .5rem 0 0}
+button:hover{background:#ffa985}
+.err{color:#ff9b9b;min-height:1.4rem}
+.ok{color:#8fe3a6}
+</style>
+</head>
+<body>
+<main>
+  <h1>Gal vault maker</h1>
+  <p>Turns your login and client list into an encrypted <b>vault.js</b>. Everything happens in your browser. Nothing is uploaded.</p>
+
+  <label for="u">Username</label>
+  <input id="u" autocomplete="off">
+  <label for="p">Password</label>
+  <input id="p" type="text" autocomplete="off">
+  <label for="j">Clients (JSON)</label>
+  <textarea id="j" spellcheck="false">{
+  "Canada": { "name": "My Client", "version": "1.8.8", "desc": "A short description.", "url": "https://your-client-link.com/" }
+}</textarea>
+  <p>Country names must match the globe exactly. Every line needs straight quotes, and a comma after each country except the last.</p>
+
+  <button id="make">Make vault.js</button><button id="copy" hidden>Copy</button>
+  <p class="err" id="err" role="alert"></p>
+  <textarea id="out" readonly hidden></textarea>
+  <ol id="steps" hidden>
+    <li>Copy the text above.</li>
+    <li>In your GitHub repo, open <b>vault.js</b>, click the pencil icon, delete everything, and paste.</li>
+    <li>Commit. Wait a minute or two, then log in with the username and password you just chose.</li>
+  </ol>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const b64 = u8 => { let s = ""; u8.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+$("make").onclick = async () => {
+  const err = $("err"); err.className = "err"; err.textContent = "";
+  const u = $("u").value.trim().toLowerCase(), p = $("p").value;
+  if (!u || !p) { err.textContent = "Enter a username and a password."; return; }
+  let data;
+  try { data = JSON.parse($("j").value); } catch (e) { err.textContent = "The clients list isn't valid JSON: " + e.message; return; }
+  const iter = 250000, salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(u + ":" + p), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(data))));
+  $("out").value = "window.VAULT = " + JSON.stringify({ v: 1, iter, salt: b64(salt), iv: b64(iv), data: b64(ct) }) + ";\n";
+  $("out").hidden = false; $("copy").hidden = false; $("steps").hidden = false;
+  err.className = "ok"; err.textContent = "Done.";
+};
+$("copy").onclick = () => { $("out").select(); navigator.clipboard.writeText($("out").value).then(() => { $("err").textContent = "Copied."; }, () => { document.execCommand("copy"); }); };
+</script>
+</body>
+</html>
