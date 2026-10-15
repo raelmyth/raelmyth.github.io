@@ -314,20 +314,14 @@ $("login").addEventListener("submit", async e => {
   btn.disabled = true; msg.textContent = "";
   try {
     const data = await unlock(u, p);
-    try { sessionStorage.setItem("gal-s", JSON.stringify([u, p])); } catch (x) {}
     enter(data);
   } catch (err) {
     msg.textContent = window.VAULT ? "Wrong username or password." : "Login file (vault.js) not found.";
     btn.disabled = false; $("p").select();
   }
 });
-$("logout").onclick = () => { try { sessionStorage.removeItem("gal-s"); } catch (x) {} location.reload(); };
-(async () => {
-  try {
-    const s = JSON.parse(sessionStorage.getItem("gal-s") || "null");
-    if (s) enter(await unlock(s[0], s[1]));
-  } catch (x) { try { sessionStorage.removeItem("gal-s"); } catch (y) {} }
-})();
+$("logout").onclick = () => location.reload();
+try { sessionStorage.removeItem("gal-s"); } catch (x) {}
 
 new ResizeObserver(resize).observe(stage);
 panel(); resize();
