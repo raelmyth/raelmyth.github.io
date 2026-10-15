@@ -62,11 +62,37 @@ button{font:inherit;color:inherit}
   .ctrl{flex-direction:row}
 }
 .err{position:fixed;left:0;right:0;top:0;z-index:9;background:#7a1f1f;color:#fff;padding:.7rem 1rem;font-size:.9rem;display:none}
+.gate{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:1rem;background:radial-gradient(circle at 50% 40%,#10204a 0%,#070b16 70%)}
+.gate form{width:min(100%,360px);background:var(--panel);border:1px solid var(--line);border-radius:1rem;padding:1.75rem}
+.gate .brandrow{display:flex;align-items:center;gap:.7rem;margin-bottom:1.25rem}
+.gate .brandrow svg{width:34px;height:34px}
+.gate .brandrow b{font-family:var(--display);font-size:1.4rem}
+.gate h1{font-family:var(--display);font-size:1.2rem;margin:0 0 1rem}
+.gate label{display:block;font-size:.85rem;font-weight:600;color:var(--muted);margin:.8rem 0 .3rem}
+.gate input{width:100%;background:#0b1224;border:1px solid var(--line);border-radius:.6rem;color:var(--text);font:inherit;padding:.7rem .85rem}
+.gate button{width:100%;margin-top:1.25rem;border:0;border-radius:.7rem;background:var(--accent);color:#1b0d07;font-weight:600;padding:.85rem;cursor:pointer}
+.gate button:hover{background:var(--accent-hi)}
+.gate button:disabled{opacity:.6;cursor:wait}
+.gate .msg{min-height:1.4rem;margin:.8rem 0 0;color:#ff9b9b;font-size:.9rem}
+.out{margin-left:auto;background:none;border:1px solid var(--line);border-radius:.5rem;padding:.25rem .65rem;font-size:.8rem;color:var(--muted);cursor:pointer}
+.out:hover{color:var(--text);border-color:var(--muted)}
 </style>
 </head>
 <body>
 <div class="err" id="err"></div>
-<div class="app">
+<div class="gate" id="gate">
+  <form id="login" autocomplete="on">
+    <div class="brandrow"><svg viewBox="0 0 32 32" fill="none" stroke="#f2845c" stroke-width="2" aria-hidden="true"><circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="6" ry="13"/><path d="M3 16h26M5.5 9.5h21M5.5 22.5h21"/></svg><b>Gal</b></div>
+    <h1>Log in</h1>
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" required autofocus>
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <p class="msg" id="msg" role="alert"></p>
+    <button type="submit" id="go">Log in</button>
+  </form>
+</div>
+<div class="app" id="app" inert>
   <div class="stage" id="stage">
     <canvas id="globe" aria-label="Interactive globe. Use the list to pick a client with the keyboard."></canvas>
     <div class="tip" id="tip"></div>
@@ -81,7 +107,7 @@ button{font:inherit;color:inherit}
   <aside class="panel">
     <div class="top">
       <svg viewBox="0 0 32 32" fill="none" stroke="#f2845c" stroke-width="2" aria-hidden="true"><circle cx="16" cy="16" r="13"/><ellipse cx="16" cy="16" rx="6" ry="13"/><path d="M3 16h26M5.5 9.5h21M5.5 22.5h21"/></svg>
-      <b>Gal</b><span>Eaglercraft launcher</span>
+      <b>Gal</b><button class="out" id="logout">Log out</button>
     </div>
     <div class="body" id="body"></div>
     <div class="foot">Fan-made link page. Not affiliated with Mojang or Microsoft.</div>
@@ -91,11 +117,11 @@ button{font:inherit;color:inherit}
 <script>
 addEventListener("error",function(e){var b=document.getElementById("err");if(!b)return;var f=(e.filename||"").split("/").pop()||"page";b.style.display="block";b.textContent="Error in "+f+(e.lineno?" (line "+e.lineno+")":"")+": "+e.message;});
 </script>
-<script src="clients.js"></script>
+<script src="vault.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 <script>
-const CLIENTS = window.CLIENTS || {};
+let CLIENTS = {};
 
 </script>
 <script>
@@ -267,6 +293,41 @@ $("body").addEventListener("click", e => {
   const f = countries.find(x => x.properties.name === b.dataset.c);
   if (f) select(f);
 });
+
+
+/* ---------- login: decrypts the client list with the username + password ---------- */
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function unlock(user, pass) {
+  const V = window.VAULT;
+  if (!V) throw new Error("vault.js is missing");
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(user.trim().toLowerCase() + ":" + pass), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(V.salt), iterations: V.iter, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(V.iv) }, key, b64(V.data));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function enter(data) {
+  CLIENTS = data; $("gate").remove(); $("app").inert = false; panel(); draw();
+}
+$("login").addEventListener("submit", async e => {
+  e.preventDefault();
+  const u = $("u").value, p = $("p").value, btn = $("go"), msg = $("msg");
+  btn.disabled = true; msg.textContent = "";
+  try {
+    const data = await unlock(u, p);
+    try { sessionStorage.setItem("gal-s", JSON.stringify([u, p])); } catch (x) {}
+    enter(data);
+  } catch (err) {
+    msg.textContent = window.VAULT ? "Wrong username or password." : "Login file (vault.js) not found.";
+    btn.disabled = false; $("p").select();
+  }
+});
+$("logout").onclick = () => { try { sessionStorage.removeItem("gal-s"); } catch (x) {} location.reload(); };
+(async () => {
+  try {
+    const s = JSON.parse(sessionStorage.getItem("gal-s") || "null");
+    if (s) enter(await unlock(s[0], s[1]));
+  } catch (x) { try { sessionStorage.removeItem("gal-s"); } catch (y) {} }
+})();
 
 new ResizeObserver(resize).observe(stage);
 panel(); resize();
